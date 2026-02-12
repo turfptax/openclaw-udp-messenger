@@ -16,7 +16,7 @@ You have tools prefixed with `udp_` that let you discover, message, and manage t
 
 ## Configuration
 
-Set via `plugins.entries.udp-messenger.config` in `openclaw.json` or at runtime with `udp_set_config`:
+Set via `plugins.entries.openclaw-udp-messenger.config` in `openclaw.json` or at runtime with `udp_set_config`:
 - `port` — UDP port to listen on (default: 51337)
 - `trustMode` — `approve-once` or `always-confirm` (default: approve-once)
 - `maxExchanges` — Max message exchanges per peer (default: 10)

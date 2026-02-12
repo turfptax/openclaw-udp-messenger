@@ -35,7 +35,7 @@ Add to your `openclaw.json`:
 {
   "plugins": {
     "entries": {
-      "udp-messenger": {
+      "openclaw-udp-messenger": {
         "enabled": true,
         "config": {
           "port": 51337,

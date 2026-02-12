@@ -18,7 +18,7 @@ You have access to a Local UDP Messenger that lets you communicate with other Op
 
 ## Installation
 
-This skill requires the **local-udp-messenger** OpenClaw plugin, which provides the `udp_*` tools listed below. The plugin is a TypeScript module that registers tools via `api.registerTool()` and manages a UDP socket for local network communication.
+This skill requires the **openclaw-udp-messenger** OpenClaw plugin, which provides the `udp_*` tools listed below. The plugin is a TypeScript module that registers tools via `api.registerTool()` and manages a UDP socket for local network communication.
 
 Install the plugin:
 ```bash
@@ -30,7 +30,7 @@ Then enable it in your `openclaw.json`:
 {
   "plugins": {
     "entries": {
-      "udp-messenger": {
+      "openclaw-udp-messenger": {
         "enabled": true,
         "config": {
           "port": 51337,
@@ -45,7 +45,7 @@ Then enable it in your `openclaw.json`:
 
 ## Available Tools
 
-These tools are registered by the `local-udp-messenger` plugin (`index.ts`):
+These tools are registered by the `openclaw-udp-messenger` plugin (`index.ts`):
 
 - **udp_discover** — Broadcast a discovery ping to find other agents on the LAN
 - **udp_send** — Send a message to a specific agent by their address (ip:port)
@@ -57,7 +57,7 @@ These tools are registered by the `local-udp-messenger` plugin (`index.ts`):
 
 ## Configuration
 
-All configuration is done via `plugins.entries.udp-messenger.config` in `openclaw.json` or at runtime with `udp_set_config`. No credentials or secrets are required — only a port number and preferences:
+All configuration is done via `plugins.entries.openclaw-udp-messenger.config` in `openclaw.json` or at runtime with `udp_set_config`. No credentials or secrets are required — only a port number and preferences:
 
 - `port` — UDP port to listen on (default: 51337, not sensitive)
 - `trustMode` — `approve-once` or `always-confirm` (default: approve-once)
