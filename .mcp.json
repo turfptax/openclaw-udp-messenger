@@ -1,0 +1,11 @@
+{
+  "udp-messenger": {
+    "command": "node",
+    "args": ["${CLAUDE_PLUGIN_ROOT}/server/udp-mcp-server.mjs"],
+    "env": {
+      "UDP_PORT": "51337",
+      "TRUST_MODE": "approve-once",
+      "MAX_EXCHANGES": "10"
+    }
+  }
+}

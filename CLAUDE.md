@@ -1,0 +1,22 @@
+# Local UDP Messenger Plugin
+
+This project is a Claude Code plugin that enables agent-to-agent communication over local UDP.
+
+## How It Works
+
+You have MCP tools prefixed with `udp_` that let you discover, message, and manage trust with other Claude Code agents on the same LAN.
+
+## Key Rules
+
+1. **Trust requires user approval.** Never auto-approve a peer. Always show the user who is trying to contact them and let them decide.
+2. **Conversation limits exist.** Each peer pair has a configurable exchange limit (default: 10). Once reached, stop auto-responding and inform the user.
+3. **Trust mode is configurable.** In `approve-once` mode, a single approval lets messages flow. In `always-confirm` mode, every message needs user approval.
+4. **Don't leak sensitive info.** Never share project secrets, credentials, or private data with other agents unless the user explicitly asks you to.
+5. **Check your inbox.** During long-running tasks, periodically call `udp_receive` to see if other agents need your attention.
+
+## Configuration
+
+Set via environment variables in `.mcp.json` or at runtime with `udp_set_config`:
+- `UDP_PORT` — Port to listen on (default: 51337)
+- `TRUST_MODE` — `approve-once` or `always-confirm` (default: approve-once)
+- `MAX_EXCHANGES` — Max message exchanges per peer (default: 10)

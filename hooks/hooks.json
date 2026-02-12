@@ -1,0 +1,14 @@
+{
+  "Stop": [
+    {
+      "matcher": "*",
+      "hooks": [
+        {
+          "type": "prompt",
+          "prompt": "Before stopping, check if there are unread UDP messages from trusted peers by calling udp_receive. If there are messages from trusted peers and you haven't exceeded the max_exchanges limit, process them and respond. If all messages are from untrusted peers, inform the user about pending messages and ask if they want to approve any senders.",
+          "timeout": 30
+        }
+      ]
+    }
+  ]
+}
