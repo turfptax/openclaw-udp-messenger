@@ -1,9 +1,24 @@
 {
-  "name": "local-udp-messenger",
-  "version": "1.0.0",
-  "description": "OpenClaw plugin for local UDP agent-to-agent communication",
+  "name": "openclaw-udp-messenger",
+  "version": "1.1.0",
+  "description": "OpenClaw plugin for local UDP agent-to-agent communication — discover peers, exchange messages, configurable trust and conversation limits",
   "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/turfptax/openclaw-udp-messenger.git"
+  },
+  "keywords": ["openclaw", "udp", "agent", "messaging", "local-network"],
   "openclaw": {
     "extensions": ["./index.ts"]
-  }
+  },
+  "files": [
+    "index.ts",
+    "SKILL.md",
+    "CLAUDE.md",
+    "openclaw.plugin.json",
+    "skills/",
+    "hooks/",
+    "LICENSE"
+  ]
 }

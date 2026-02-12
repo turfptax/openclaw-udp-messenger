@@ -8,7 +8,7 @@ metadata:
         - node
     homepage: https://github.com/turfptax/openclaw-udp-messenger
     install:
-      npmSpec: local-udp-messenger
+      npmSpec: openclaw-udp-messenger
       localPath: https://github.com/turfptax/openclaw-udp-messenger.git
 ---
 
