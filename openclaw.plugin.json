@@ -1,0 +1,30 @@
+{
+  "id": "udp-messenger",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "port": {
+        "type": "number",
+        "default": 51337,
+        "description": "UDP port to listen on"
+      },
+      "trustMode": {
+        "type": "string",
+        "enum": ["approve-once", "always-confirm"],
+        "default": "approve-once",
+        "description": "Trust model for incoming peer messages"
+      },
+      "maxExchanges": {
+        "type": "number",
+        "default": 10,
+        "description": "Maximum message exchanges per peer before stopping"
+      }
+    }
+  },
+  "uiHints": {
+    "port": { "label": "UDP Port" },
+    "trustMode": { "label": "Trust Mode" },
+    "maxExchanges": { "label": "Max Exchanges Per Peer" }
+  },
+  "skills": ["skills/udp-messenger"]
+}

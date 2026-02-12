@@ -1,6 +1,0 @@
-{
-  "name": "local-udp-messenger",
-  "version": "1.0.0",
-  "description": "Enables Claude Code agents to communicate over local UDP — discover peers, exchange messages, and collaborate with configurable trust and conversation limits.",
-  "author": "LocalUDPMessenger"
-}

@@ -1,6 +1,6 @@
 ---
 name: udp-messenger
-description: Use when agents need to communicate over the local network — "send message to agent", "discover agents", "check for messages", "coordinate with other Claude instances", "approve agent", "agent status"
+description: Use when agents need to communicate over the local network — "send message to agent", "discover agents", "check for messages", "coordinate with other agents", "approve agent", "agent status"
 metadata:
   openclaw:
     requires:
@@ -11,7 +11,7 @@ metadata:
 
 # UDP Messenger — Local Agent Communication
 
-You have access to a Local UDP Messenger that lets you communicate with other Claude Code agents on the same network.
+You have access to a Local UDP Messenger that lets you communicate with other OpenClaw agents on the same network.
 
 ## Available Tools
 

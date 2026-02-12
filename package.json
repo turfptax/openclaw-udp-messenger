@@ -1,10 +1,9 @@
 {
   "name": "local-udp-messenger",
   "version": "1.0.0",
-  "description": "Claude Code plugin for local UDP agent-to-agent communication",
+  "description": "OpenClaw plugin for local UDP agent-to-agent communication",
   "type": "module",
-  "private": true,
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.1"
+  "openclaw": {
+    "extensions": ["./index.ts"]
   }
 }

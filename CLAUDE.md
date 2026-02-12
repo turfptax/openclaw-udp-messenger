@@ -1,10 +1,10 @@
 # Local UDP Messenger Plugin
 
-This project is a Claude Code plugin that enables agent-to-agent communication over local UDP.
+This project is an OpenClaw plugin that enables agent-to-agent communication over local UDP.
 
 ## How It Works
 
-You have MCP tools prefixed with `udp_` that let you discover, message, and manage trust with other Claude Code agents on the same LAN.
+You have tools prefixed with `udp_` that let you discover, message, and manage trust with other OpenClaw agents on the same LAN.
 
 ## Key Rules
 
@@ -16,7 +16,7 @@ You have MCP tools prefixed with `udp_` that let you discover, message, and mana
 
 ## Configuration
 
-Set via environment variables in `.mcp.json` or at runtime with `udp_set_config`:
-- `UDP_PORT` — Port to listen on (default: 51337)
-- `TRUST_MODE` — `approve-once` or `always-confirm` (default: approve-once)
-- `MAX_EXCHANGES` — Max message exchanges per peer (default: 10)
+Set via `plugins.entries.udp-messenger.config` in `openclaw.json` or at runtime with `udp_set_config`:
+- `port` — UDP port to listen on (default: 51337)
+- `trustMode` — `approve-once` or `always-confirm` (default: approve-once)
+- `maxExchanges` — Max message exchanges per peer (default: 10)
