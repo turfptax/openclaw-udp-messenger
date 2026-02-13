@@ -1,7 +1,7 @@
 {
   "name": "openclaw-udp-messenger",
-  "version": "1.1.2",
-  "description": "OpenClaw plugin for local UDP agent-to-agent communication — discover peers, exchange messages, configurable trust and conversation limits",
+  "version": "1.2.0",
+  "description": "OpenClaw plugin for local UDP agent-to-agent communication — discover peers, exchange messages, configurable trust, hourly rate limits, and full message logging",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -16,6 +16,7 @@
     "index.ts",
     "SKILL.md",
     "CLAUDE.md",
+    "README.md",
     "openclaw.plugin.json",
     "skills/",
     "hooks/",
