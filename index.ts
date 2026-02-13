@@ -15,6 +15,12 @@ let trustMode = "approve-once";
 let maxExchangesPerHour = 10;
 let pluginApi: any = null;
 
+// --- Relay server (optional central monitor) ---
+let relayEnabled = false;
+let relayHost = "";
+let relayPort = 31415;
+let relayIp = ""; // resolved IP for relay host
+
 const trustedPeers = new Map<string, { ip: string; port: number; approvedAt: number; hostname?: string }>();
 const inbox: Array<{
   from: string;
@@ -71,6 +77,59 @@ function addLog(entry: Omit<LogEntry, "timestamp">) {
   messageLog.push({ ...entry, timestamp: Date.now() });
   if (messageLog.length > MAX_LOG_ENTRIES) {
     messageLog.splice(0, messageLog.length - MAX_LOG_ENTRIES);
+  }
+}
+
+// --- Relay: forward a copy of every message to the monitoring server ---
+function relayMessage(event: {
+  type: "sent" | "received" | "system";
+  agentId: string;
+  peerId: string;
+  peerAddress: string;
+  message: string;
+  timestamp: number;
+}) {
+  if (!relayEnabled || !relayIp || !socket) return;
+
+  const packet = JSON.stringify({
+    magic: PROTOCOL_MAGIC,
+    type: "relay",
+    relay_event: event.type,
+    agent_id: event.agentId,
+    peer_id: event.peerId,
+    peer_address: event.peerAddress,
+    payload: event.message,
+    timestamp: event.timestamp,
+  });
+
+  socket.send(packet, relayPort, relayIp, (err) => {
+    if (err) {
+      console.error(`Relay send failed: ${err.message}`);
+    }
+  });
+}
+
+async function initRelay(host: string, port: number) {
+  relayHost = host;
+  relayPort = port;
+  if (!host) {
+    relayEnabled = false;
+    return;
+  }
+  try {
+    relayIp = await resolveHostname(host);
+    relayEnabled = true;
+    addLog({
+      direction: "system",
+      peerId: "relay",
+      peerAddress: `${relayIp}:${relayPort}`,
+      message: `Relay server enabled — forwarding all messages to ${host}${host !== relayIp ? ` (${relayIp})` : ""}:${relayPort}`,
+      trusted: true,
+    });
+    console.log(`Relay server enabled: ${relayIp}:${relayPort}`);
+  } catch {
+    relayEnabled = false;
+    console.error(`Could not resolve relay host: ${host} — relay disabled`);
   }
 }
 
@@ -186,6 +245,16 @@ function initSocket() {
         trusted: isTrusted,
       });
 
+      // Relay to monitoring server
+      relayMessage({
+        type: "received",
+        agentId,
+        peerId,
+        peerAddress: peerAddr,
+        message: msg.payload,
+        timestamp: Date.now(),
+      });
+
       // Notify the agent about incoming trusted messages
       if (isTrusted && !isOverLimit(peerId) && pluginApi?.notify) {
         pluginApi.notify({
@@ -233,6 +302,14 @@ export default function register(api: any) {
   maxExchangesPerHour = config.maxExchanges || 10;
 
   initSocket();
+
+  // Initialize relay if configured
+  if (config.relayServer) {
+    const parts = String(config.relayServer).split(":");
+    const rHost = parts[0];
+    const rPort = parts.length > 1 ? parseInt(parts[1], 10) : 31415;
+    initRelay(rHost, rPort);
+  }
 
   // --- Tool: udp_discover ---
   api.registerTool({
@@ -351,6 +428,16 @@ export default function register(api: any) {
             peerAddress: params.address,
             message: params.message,
             trusted: params.peer_id ? trustedPeers.has(params.peer_id) : false,
+          });
+
+          // Relay to monitoring server
+          relayMessage({
+            type: "sent",
+            agentId,
+            peerId: params.peer_id || "unknown",
+            peerAddress: params.address,
+            message: params.message,
+            timestamp: Date.now(),
           });
 
           const hourly = params.peer_id ? getHourlyCount(params.peer_id) : null;
@@ -589,11 +676,16 @@ export default function register(api: any) {
         peerList.push(`  ${id} @ ${info.ip}:${info.port}${hostname} — ${hourly.total}/${maxExchangesPerHour} exchanges this hour`);
       }
 
+      const relayStatus = relayEnabled
+        ? `Relay server: ${relayHost}${relayHost !== relayIp ? ` (${relayIp})` : ""}:${relayPort} [ACTIVE]`
+        : "Relay server: disabled";
+
       const text = [
         `Agent ID: ${agentId}`,
         `Listening on port: ${udpPort}`,
         `Trust mode: ${trustMode}`,
         `Max exchanges per peer per hour: ${maxExchangesPerHour}`,
+        relayStatus,
         `Inbox: ${inbox.length} pending message(s)`,
         `Log entries: ${messageLog.length}`,
         `Trusted peers (${trustedPeers.size}):`,
@@ -607,11 +699,11 @@ export default function register(api: any) {
   // --- Tool: udp_set_config ---
   api.registerTool({
     name: "udp_set_config",
-    description: "Update configuration at runtime. Available keys: max_exchanges (number, per hour), trust_mode (approve-once | always-confirm).",
+    description: "Update configuration at runtime. Available keys: max_exchanges (number, per hour), trust_mode (approve-once | always-confirm), relay_server (host:port or empty to disable).",
     parameters: {
       type: "object",
       properties: {
-        key: { type: "string", enum: ["max_exchanges", "trust_mode"], description: "The config key to update" },
+        key: { type: "string", enum: ["max_exchanges", "trust_mode", "relay_server"], description: "The config key to update" },
         value: { type: "string", description: "The new value" },
       },
       required: ["key", "value"],
@@ -634,6 +726,27 @@ export default function register(api: any) {
         trustMode = params.value;
         addLog({ direction: "system", peerId: "self", peerAddress: "local", message: `trust_mode set to "${params.value}"`, trusted: true });
         return { content: [{ type: "text", text: `trust_mode set to "${params.value}".` }] };
+      }
+
+      if (params.key === "relay_server") {
+        if (!params.value || params.value === "off" || params.value === "disable" || params.value === "none") {
+          relayEnabled = false;
+          relayHost = "";
+          relayIp = "";
+          addLog({ direction: "system", peerId: "relay", peerAddress: "local", message: "Relay server disabled", trusted: true });
+          return { content: [{ type: "text", text: "Relay server disabled." }] };
+        }
+
+        const parts = params.value.split(":");
+        const rHost = parts[0];
+        const rPort = parts.length > 1 ? parseInt(parts[1], 10) : 31415;
+        await initRelay(rHost, rPort);
+
+        if (relayEnabled) {
+          return { content: [{ type: "text", text: `Relay server set to ${relayIp}:${relayPort}${rHost !== relayIp ? ` (resolved from ${rHost})` : ""}. All messages will be forwarded.` }] };
+        } else {
+          return { content: [{ type: "text", text: `Failed to resolve relay host: ${rHost}. Relay remains disabled.` }] };
+        }
       }
 
       return { content: [{ type: "text", text: `Unknown config key: ${params.key}` }] };

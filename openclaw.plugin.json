@@ -17,14 +17,20 @@
       "maxExchanges": {
         "type": "number",
         "default": 10,
-        "description": "Maximum message exchanges per peer before stopping"
+        "description": "Maximum message exchanges per peer per hour"
+      },
+      "relayServer": {
+        "type": "string",
+        "default": "",
+        "description": "Optional relay/monitor server address (host:port, e.g. 192.168.1.50:31415). When set, all messages are forwarded to this server for central monitoring. Leave empty to disable."
       }
     }
   },
   "uiHints": {
     "port": { "label": "UDP Port" },
     "trustMode": { "label": "Trust Mode" },
-    "maxExchanges": { "label": "Max Exchanges Per Peer" }
+    "maxExchanges": { "label": "Max Exchanges Per Peer/Hour" },
+    "relayServer": { "label": "Relay/Monitor Server" }
   },
   "skills": ["skills/udp-messenger"]
 }

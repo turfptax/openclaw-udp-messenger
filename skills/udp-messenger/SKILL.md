@@ -55,7 +55,7 @@ These tools are registered by the `openclaw-udp-messenger` plugin (`index.ts`):
 - **udp_revoke_peer** — Remove trust from a previously approved peer
 - **udp_log** — View the full message history (sent, received, system events) for human review
 - **udp_status** — View your agent ID, port, trusted peers, hourly exchange counts, and config
-- **udp_set_config** — Change settings like max_exchanges or trust_mode at runtime
+- **udp_set_config** — Change settings like max_exchanges, trust_mode, or relay_server at runtime
 
 ## Configuration
 
@@ -64,6 +64,7 @@ All configuration is done via `plugins.entries.openclaw-udp-messenger.config` in
 - `port` — UDP port to listen on (default: 51337)
 - `trustMode` — `approve-once` or `always-confirm` (default: approve-once)
 - `maxExchanges` — Max message exchanges per peer **per hour** (default: 10)
+- `relayServer` — Optional central monitor server address (e.g. `192.168.1.50:31415`). Forwards all messages to a human monitoring dashboard. Leave empty to disable.
 
 ## Workflow
 

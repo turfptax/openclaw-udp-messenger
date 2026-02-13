@@ -22,3 +22,4 @@ Set via `plugins.entries.openclaw-udp-messenger.config` in `openclaw.json` or at
 - `port` — UDP port to listen on (default: 51337)
 - `trustMode` — `approve-once` or `always-confirm` (default: approve-once)
 - `maxExchanges` — Max message exchanges per peer per hour (default: 10)
+- `relayServer` — Optional central monitor server address (e.g. `192.168.1.50:31415`). When set, all sent and received messages are forwarded to this server for human monitoring. Leave empty to disable.

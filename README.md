@@ -1,6 +1,6 @@
 # Local UDP Messenger
 
-An [OpenClaw](https://docs.openclaw.ai) plugin that lets AI agents communicate with each other over local UDP. Discover peers on the same LAN, exchange messages, and collaborate — with configurable trust, hourly rate limits, and full message logging.
+An [OpenClaw](https://docs.openclaw.ai) plugin that lets AI agents communicate with each other over local UDP. Discover peers on the same LAN, exchange messages, and collaborate — with configurable trust, hourly rate limits, full message logging, and optional relay to a central monitoring server.
 
 ## Features
 
@@ -11,6 +11,7 @@ An [OpenClaw](https://docs.openclaw.ai) plugin that lets AI agents communicate w
 - **Hourly Rate Limits** — configurable max exchanges per peer per hour (default: 10) with rolling window
 - **Message Log** — full history of all sent/received/system messages for human review
 - **Agent Notifications** — agents are notified when trusted peers send messages
+- **Relay Server** — optionally forward all messages to a central monitoring server for human observation
 - **No Dependencies** — pure Node.js, no external packages required at runtime
 
 ## Install
@@ -43,7 +44,8 @@ Add to your `openclaw.json`:
         "config": {
           "port": 51337,
           "trustMode": "approve-once",
-          "maxExchanges": 10
+          "maxExchanges": 10,
+          "relayServer": ""
         }
       }
     }
@@ -56,6 +58,7 @@ Add to your `openclaw.json`:
 | `port` | `51337` | UDP port to listen on |
 | `trustMode` | `approve-once` | `approve-once` or `always-confirm` |
 | `maxExchanges` | `10` | Max message exchanges per peer **per hour** |
+| `relayServer` | `""` (disabled) | Central monitor address (`host:port`, e.g. `192.168.1.50:31415`) |
 
 ## Tools
 
@@ -70,8 +73,38 @@ The plugin registers these agent tools:
 | `udp_approve_peer` | Trust a peer (user approval required) |
 | `udp_revoke_peer` | Remove trust from a peer |
 | `udp_log` | View full message history (sent, received, system events) |
-| `udp_status` | View agent ID, port, peers, hourly exchange counts |
-| `udp_set_config` | Change max_exchanges or trust_mode at runtime |
+| `udp_status` | View agent ID, port, peers, hourly exchange counts, relay status |
+| `udp_set_config` | Change max_exchanges, trust_mode, or relay_server at runtime |
+
+## Relay / Monitoring Server
+
+When `relayServer` is configured, every sent and received message is forwarded as a UDP packet to the specified server. This allows a human researcher to observe all agent-to-agent communication from a central dashboard.
+
+The relay packet format:
+```json
+{
+  "magic": "CLAUDE-UDP-V1",
+  "type": "relay",
+  "relay_event": "sent|received",
+  "agent_id": "hostname-abc123",
+  "peer_id": "other-agent-id",
+  "peer_address": "192.168.1.5:51337",
+  "payload": "the message content",
+  "timestamp": 1707782400000
+}
+```
+
+**Compatible with** the [UDP Instant Messenger Human Interface](https://github.com/turfptax) — a Python/Flask web UI that listens on port 31415 and displays all relayed messages in real time.
+
+To enable at runtime (without restarting):
+```
+udp_set_config key=relay_server value=192.168.1.50:31415
+```
+
+To disable:
+```
+udp_set_config key=relay_server value=off
+```
 
 ## How It Works
 
@@ -84,6 +117,7 @@ The plugin registers these agent tools:
 7. Exchange counts use a **rolling hourly window** — limits reset automatically
 8. All traffic is local UDP — nothing leaves your network
 9. Every message is logged — use `udp_log` to review history
+10. If relay is enabled, copies go to the monitoring server for human observation
 
 ## Security
 
@@ -93,6 +127,7 @@ The plugin registers these agent tools:
 - Hourly rate limits prevent unbounded token consumption
 - Use `always-confirm` mode on untrusted networks
 - Full message log available for audit via `udp_log`
+- Relay server is opt-in and only sends copies — does not affect agent-to-agent communication
 
 ## License
 
