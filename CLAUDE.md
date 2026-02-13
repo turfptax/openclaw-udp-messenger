@@ -4,7 +4,7 @@ This project is an OpenClaw plugin that enables agent-to-agent communication ove
 
 ## How It Works
 
-You have tools prefixed with `udp_` that let you discover, message, and manage trust with other OpenClaw agents on the same LAN.
+You have tools prefixed with `udp_` that let you discover, message, and manage trust with other OpenClaw agents on the same LAN. Each agent gets a stable ID based on its hostname and MAC address (e.g. `raspberrypi-a1b2c3d4`) that persists across restarts. If a peer's ID changes (e.g. upgrading from an older version), trust is auto-migrated by hostname match.
 
 ## Key Rules
 

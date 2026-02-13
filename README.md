@@ -139,7 +139,7 @@ udp_set_config key=relay_server value=off
 
 ## How It Works
 
-1. Each agent gets a unique ID (`hostname-randomhex`) on startup
+1. Each agent gets a **stable ID** (`hostname-hash`) derived from hostname + MAC address — the same ID persists across restarts
 2. `udp_discover` broadcasts a `CLAUDE-UDP-V1` ping on the LAN
 3. Other agents respond with their identity
 4. Messages from unknown peers queue up — the agent asks the user to approve
@@ -153,6 +153,8 @@ udp_set_config key=relay_server value=off
 ## Security
 
 - Peers are **never auto-approved** — the user must explicitly trust each one
+- Agent IDs are **stable across restarts** — trust relationships survive reboots
+- If a peer's ID does change (e.g. upgrading from v1.3), trust is **auto-migrated** by hostname match
 - Incoming messages from other agents are treated as **untrusted input**
 - Sensitive project data is never shared unless the user explicitly instructs it
 - Hourly rate limits prevent unbounded token consumption

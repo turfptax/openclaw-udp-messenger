@@ -295,10 +295,79 @@ function formatTimestamp(ts: number): string {
   return new Date(ts).toLocaleString();
 }
 
+// --- Stable Agent ID: deterministic across restarts ---
+function generateStableAgentId(): string {
+  const hostname = os.hostname();
+
+  // Find the first non-internal MAC address for a stable hardware fingerprint
+  const interfaces = os.networkInterfaces();
+  let mac = "";
+  for (const iface of Object.values(interfaces)) {
+    if (!iface) continue;
+    for (const info of iface) {
+      if (!info.internal && info.mac && info.mac !== "00:00:00:00:00:00") {
+        mac = info.mac;
+        break;
+      }
+    }
+    if (mac) break;
+  }
+
+  // Hash hostname + MAC to get a stable 8-char hex suffix
+  // If no MAC found (rare), fall back to hostname-only hash
+  const seed = mac ? `${hostname}:${mac}:${udpPort}` : `${hostname}:${udpPort}`;
+  const hash = crypto.createHash("sha256").update(seed).digest("hex").slice(0, 8);
+
+  return `${hostname}-${hash}`;
+}
+
+// --- Trust lookup helpers ---
+// Trust can match by exact agent ID or by hostname prefix (for peers whose
+// random suffix changed between restarts — backward compat with v1.3 IDs)
+function isTrustedPeer(peerId: string): boolean {
+  if (trustedPeers.has(peerId)) return true;
+
+  // Hostname-prefix matching: if peerId is "raspberrypi-NEWHEX" and we have
+  // "raspberrypi-OLDHEX" trusted, match on the hostname portion and auto-migrate
+  const dashIdx = peerId.lastIndexOf("-");
+  if (dashIdx === -1) return false;
+  const peerHostname = peerId.slice(0, dashIdx);
+
+  for (const [trustedId, info] of trustedPeers) {
+    const trustedDash = trustedId.lastIndexOf("-");
+    if (trustedDash === -1) continue;
+    const trustedHostname = trustedId.slice(0, trustedDash);
+
+    if (peerHostname === trustedHostname) {
+      // Migrate trust to new ID
+      trustedPeers.set(peerId, { ...info, approvedAt: info.approvedAt });
+      trustedPeers.delete(trustedId);
+
+      // Migrate exchange history too
+      const oldHistory = exchangeHistory.get(trustedId);
+      if (oldHistory) {
+        const existing = exchangeHistory.get(peerId) || [];
+        exchangeHistory.set(peerId, [...existing, ...oldHistory]);
+        exchangeHistory.delete(trustedId);
+      }
+
+      addLog({
+        direction: "system",
+        peerId,
+        peerAddress: info.ip ? `${info.ip}:${info.port}` : "unknown",
+        message: `Trust migrated from old ID "${trustedId}" → "${peerId}" (same hostname: ${peerHostname})`,
+        trusted: true,
+      });
+      return true;
+    }
+  }
+  return false;
+}
+
 function initSocket() {
   if (socket) return;
 
-  agentId = `${os.hostname()}-${crypto.randomBytes(4).toString("hex")}`;
+  agentId = generateStableAgentId();
   socket = dgram.createSocket({ type: "udp4", reuseAddr: true });
 
   socket.on("message", (buf, rinfo) => {
@@ -328,7 +397,7 @@ function initSocket() {
         peerId,
         peerAddress: peerAddr,
         message: `Discovery ping received, pong sent`,
-        trusted: trustedPeers.has(peerId),
+        trusted: isTrustedPeer(peerId),
       });
       return;
     }
@@ -342,13 +411,32 @@ function initSocket() {
         peerId,
         peerAddress: peerAddr,
         message: `Discovery pong received`,
-        trusted: trustedPeers.has(peerId),
+        trusted: isTrustedPeer(peerId),
       });
       return;
     }
 
     if (msg.type === "message") {
-      const isTrusted = trustedPeers.has(peerId);
+      const isTrusted = isTrustedPeer(peerId);
+
+      // Update stored peer address if it changed (e.g. IP reassignment, port change)
+      if (isTrusted && trustedPeers.has(peerId)) {
+        const stored = trustedPeers.get(peerId)!;
+        const incomingIp = rinfo.address;
+        const incomingPort = msg.sender_port || rinfo.port;
+        if (stored.ip !== incomingIp || stored.port !== incomingPort) {
+          const oldAddr = `${stored.ip}:${stored.port}`;
+          stored.ip = incomingIp;
+          stored.port = incomingPort;
+          addLog({
+            direction: "system",
+            peerId,
+            peerAddress: peerAddr,
+            message: `Peer address updated: ${oldAddr} → ${incomingIp}:${incomingPort}`,
+            trusted: true,
+          });
+        }
+      }
 
       // Enforce message size limit to prevent oversized payloads
       let messagePayload: string = typeof msg.payload === "string" ? msg.payload : String(msg.payload || "");
@@ -518,7 +606,7 @@ export default function register(api: any) {
       }
 
       const lines = results.map((r) => {
-        const trusted = trustedPeers.has(r.id) ? " [TRUSTED]" : "";
+        const trusted = isTrustedPeer(r.id) ? " [TRUSTED]" : "";
         return `  ${r.id} @ ${r.address}${trusted}`;
       });
 
@@ -593,7 +681,7 @@ export default function register(api: any) {
             peerId: params.peer_id || "unknown",
             peerAddress: params.address,
             message: params.message,
-            trusted: params.peer_id ? trustedPeers.has(params.peer_id) : false,
+            trusted: params.peer_id ? isTrustedPeer(params.peer_id) : false,
           });
 
           // Relay to monitoring server
