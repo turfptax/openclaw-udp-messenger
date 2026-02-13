@@ -70,14 +70,16 @@ To enable **active wake-up**, configure a Gateway webhook token. The plugin will
 
 **Setup:**
 
-1. Make sure you have a hook token configured in your `openclaw.json`:
+1. **Enable external hooks** and set a token in your `openclaw.json`:
    ```json
    {
      "hooks": {
+       "enabled": true,
        "token": "your-secret-token-here"
      }
    }
    ```
+   > ⚠️ **`hooks.enabled: true` is required.** Without it, the Gateway never registers the `/hooks/agent` route and you'll get `HTTP 405 Method Not Allowed`. Note that `hooks.internal.enabled` (for boot-md, session-memory, etc.) is a separate setting — you need `hooks.enabled` at the top level.
 
 2. The plugin auto-discovers the token from (checked in order):
    - `hooks.token` in `openclaw.json`
@@ -85,7 +87,7 @@ To enable **active wake-up**, configure a Gateway webhook token. The plugin will
    - `plugins.entries.openclaw-udp-messenger.config.hookToken`
    - `OPENCLAW_HOOK_TOKEN` environment variable
 
-3. Or set it at runtime:
+3. Or set the token at runtime:
    ```
    udp_set_config key=hook_token value=your-secret-token-here
    ```

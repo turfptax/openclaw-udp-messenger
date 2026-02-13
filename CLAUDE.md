@@ -23,12 +23,17 @@ When a trusted peer sends a message, the plugin needs to trigger the agent to ac
 1. **With hook token configured** — The plugin POSTs to `/hooks/agent` on the local Gateway, which starts a real agent turn. The agent receives the message as a prompt and can read it and respond using `udp_send`. This is the recommended mode.
 2. **Without hook token** — Falls back to `api.notify()`, which sends a passive notification. The agent may not actively respond until it next checks `udp_receive`.
 
-To enable wake-up, set the Gateway's hook token in any of these locations (checked in order):
-- `hooks.token` in `openclaw.json`
-- `gateway.auth.token` in `openclaw.json`
-- `plugins.entries.openclaw-udp-messenger.config.hookToken` in `openclaw.json`
-- `OPENCLAW_HOOK_TOKEN` environment variable
-- At runtime: `udp_set_config key=hook_token value=YOUR_TOKEN`
+To enable wake-up, you need **two things** in `openclaw.json`:
+
+1. **Enable external hooks** — `"hooks": { "enabled": true }` (not just `hooks.internal.enabled`)
+2. **Set a hook token** — in any of these locations (checked in order):
+   - `hooks.token` in `openclaw.json`
+   - `gateway.auth.token` in `openclaw.json`
+   - `plugins.entries.openclaw-udp-messenger.config.hookToken` in `openclaw.json`
+   - `OPENCLAW_HOOK_TOKEN` environment variable
+   - At runtime: `udp_set_config key=hook_token value=YOUR_TOKEN`
+
+**Important:** If you see `Agent wake-up failed (HTTP 405)` in the logs, it means `hooks.enabled` is not set to `true`. The `/hooks/agent` endpoint only exists when external hooks are enabled.
 
 ## Configuration
 

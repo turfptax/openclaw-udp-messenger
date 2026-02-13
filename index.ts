@@ -360,23 +360,26 @@ function formatTimestamp(ts: number): string {
 function generateStableAgentId(): string {
   const hostname = os.hostname();
 
-  // Find the first non-internal MAC address for a stable hardware fingerprint
+  // Collect ALL non-internal MAC addresses, sort them so the result is
+  // deterministic regardless of which interface comes up first.
   const interfaces = os.networkInterfaces();
-  let mac = "";
+  const macs: string[] = [];
   for (const iface of Object.values(interfaces)) {
     if (!iface) continue;
     for (const info of iface) {
       if (!info.internal && info.mac && info.mac !== "00:00:00:00:00:00") {
-        mac = info.mac;
-        break;
+        if (!macs.includes(info.mac)) {
+          macs.push(info.mac);
+        }
       }
     }
-    if (mac) break;
   }
+  macs.sort(); // deterministic order regardless of enumeration
 
-  // Hash hostname + MAC to get a stable 8-char hex suffix
-  // If no MAC found (rare), fall back to hostname-only hash
-  const seed = mac ? `${hostname}:${mac}:${udpPort}` : `${hostname}:${udpPort}`;
+  // Hash hostname + sorted MACs for a truly stable fingerprint
+  const seed = macs.length > 0
+    ? `${hostname}:${macs.join(",")}:${udpPort}`
+    : `${hostname}:${udpPort}`;
   const hash = crypto.createHash("sha256").update(seed).digest("hex").slice(0, 8);
 
   return `${hostname}-${hash}`;
@@ -615,10 +618,23 @@ export default function register(api: any) {
       process.env.OPENCLAW_HOOK_TOKEN ||
       "";
 
+    // Check if external hooks are enabled (required for /hooks/agent endpoint)
+    const hooksEnabled = fullConfig?.hooks?.enabled === true;
+
     if (token) {
       hookToken = String(token);
-      wakeEnabled = true;
-      console.log(`UDP Messenger: Agent wake-up enabled via /hooks/agent on port ${gatewayPort}`);
+      if (hooksEnabled) {
+        wakeEnabled = true;
+        console.log(`UDP Messenger: Agent wake-up enabled via /hooks/agent on port ${gatewayPort}`);
+      } else {
+        wakeEnabled = false;
+        console.warn(
+          "UDP Messenger: Hook token found but hooks.enabled is not true in openclaw.json. " +
+          "POST /hooks/agent will return 405 Method Not Allowed. " +
+          'Add "hooks": { "enabled": true, "token": "..." } to openclaw.json to fix. ' +
+          "Falling back to api.notify() for incoming messages."
+        );
+      }
     } else {
       console.log(
         "UDP Messenger: No hook token found — agent wake-up disabled. " +

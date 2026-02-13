@@ -71,6 +71,8 @@ All configuration is done via `plugins.entries.openclaw-udp-messenger.config` in
 
 When a trusted peer sends a message and the hook token is configured, the plugin triggers a full agent turn via the Gateway's `/hooks/agent` endpoint. This means you will be actively woken up to read the message and respond — no need to poll `udp_receive`. Without the hook token, the plugin falls back to a passive notification.
 
+**Important:** Wake-up requires both `hooks.enabled: true` AND a hook token in `openclaw.json`. If you see `HTTP 405` errors in the log, `hooks.enabled` is missing — add `"hooks": { "enabled": true, "token": "..." }` to your config.
+
 ## Workflow
 
 1. Use `udp_discover` to find other agents on the network, or `udp_add_peer` to add one by hostname/IP
