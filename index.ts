@@ -1,7 +1,9 @@
 import dgram from "node:dgram";
 import dns from "node:dns/promises";
+import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
+import path from "node:path";
 import crypto from "node:crypto";
 
 const PROTOCOL_MAGIC = "CLAUDE-UDP-V1";
@@ -84,6 +86,65 @@ function addLog(entry: Omit<LogEntry, "timestamp">) {
   messageLog.push({ ...entry, timestamp: Date.now() });
   if (messageLog.length > MAX_LOG_ENTRIES) {
     messageLog.splice(0, messageLog.length - MAX_LOG_ENTRIES);
+  }
+}
+
+// --- Trust Persistence: save/load trusted peers to disk ---
+let trustFilePath = ""; // Set during register() from plugin data dir
+
+function getTrustFilePath(): string {
+  if (trustFilePath) return trustFilePath;
+  // Fallback: store next to the plugin in ~/.openclaw/extensions/openclaw-udp-messenger/
+  const homeDir = os.homedir();
+  const fallbackDir = path.join(homeDir, ".openclaw", "extensions", "openclaw-udp-messenger");
+  try {
+    fs.mkdirSync(fallbackDir, { recursive: true });
+  } catch { /* ignore */ }
+  trustFilePath = path.join(fallbackDir, "trusted-peers.json");
+  return trustFilePath;
+}
+
+function saveTrust() {
+  try {
+    const filePath = getTrustFilePath();
+    const data: Record<string, { ip: string; port: number; approvedAt: number; hostname?: string }> = {};
+    for (const [id, info] of trustedPeers) {
+      data[id] = { ip: info.ip, port: info.port, approvedAt: info.approvedAt, hostname: info.hostname };
+    }
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
+  } catch (err: any) {
+    console.error(`Failed to save trust state: ${err.message}`);
+  }
+}
+
+function loadTrust() {
+  try {
+    const filePath = getTrustFilePath();
+    if (!fs.existsSync(filePath)) return;
+    const raw = fs.readFileSync(filePath, "utf8");
+    const data = JSON.parse(raw);
+    for (const [id, info] of Object.entries(data) as [string, any][]) {
+      if (id && info && info.ip && info.port) {
+        trustedPeers.set(id, {
+          ip: info.ip,
+          port: info.port,
+          approvedAt: info.approvedAt || Date.now(),
+          hostname: info.hostname,
+        });
+      }
+    }
+    if (trustedPeers.size > 0) {
+      console.log(`Loaded ${trustedPeers.size} trusted peer(s) from disk`);
+      addLog({
+        direction: "system",
+        peerId: "self",
+        peerAddress: "local",
+        message: `Loaded ${trustedPeers.size} trusted peer(s) from ${filePath}`,
+        trusted: true,
+      });
+    }
+  } catch (err: any) {
+    console.error(`Failed to load trust state: ${err.message}`);
   }
 }
 
@@ -358,6 +419,7 @@ function isTrustedPeer(peerId: string): boolean {
         message: `Trust migrated from old ID "${trustedId}" → "${peerId}" (same hostname: ${peerHostname})`,
         trusted: true,
       });
+      saveTrust();
       return true;
     }
   }
@@ -435,6 +497,7 @@ function initSocket() {
             message: `Peer address updated: ${oldAddr} → ${incomingIp}:${incomingPort}`,
             trusted: true,
           });
+          saveTrust();
         }
       }
 
@@ -506,6 +569,9 @@ function initSocket() {
       message: `Agent started as ${agentId} on port ${udpPort}`,
       trusted: true,
     });
+
+    // Load persisted trust from disk after socket is ready
+    loadTrust();
   });
 }
 
@@ -519,6 +585,15 @@ export default function register(api: any) {
   udpPort = config.port || 51337;
   trustMode = config.trustMode || "approve-once";
   maxExchangesPerHour = config.maxExchanges || 10;
+
+  // Set trust persistence path from plugin's data directory
+  try {
+    const dataDir = api.getDataDir?.() || api.getPluginDir?.() || "";
+    if (dataDir) {
+      fs.mkdirSync(dataDir, { recursive: true });
+      trustFilePath = path.join(dataDir, "trusted-peers.json");
+    }
+  } catch { /* getTrustFilePath() will use fallback */ }
 
   // --- Discover Gateway webhook token for agent wake-up ---
   // The hook token is configured in gateway.auth or hooks.token in openclaw.json
@@ -745,6 +820,7 @@ export default function register(api: any) {
     },
     async execute(_id: string, params: { peer_id: string; ip: string; port: number }) {
       trustedPeers.set(params.peer_id, { ip: params.ip, port: params.port, approvedAt: Date.now() });
+      saveTrust();
 
       for (const msg of inbox) {
         if (msg.fromId === params.peer_id) msg.trusted = true;
@@ -810,6 +886,7 @@ export default function register(api: any) {
           approvedAt: Date.now(),
           hostname: params.host !== ip ? params.host : undefined,
         });
+        saveTrust();
 
         addLog({
           direction: "system",
@@ -832,6 +909,7 @@ export default function register(api: any) {
         approvedAt: Date.now(),
         hostname: params.host !== ip ? params.host : undefined,
       });
+      saveTrust();
 
       addLog({
         direction: "system",
@@ -863,6 +941,7 @@ export default function register(api: any) {
         return { content: [{ type: "text", text: `Peer ${params.peer_id} was not in the trusted list.` }] };
       }
       trustedPeers.delete(params.peer_id);
+      saveTrust();
       addLog({
         direction: "system",
         peerId: params.peer_id,
