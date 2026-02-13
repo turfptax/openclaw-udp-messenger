@@ -65,14 +65,19 @@ All configuration is done via `plugins.entries.openclaw-udp-messenger.config` in
 - `trustMode` — `approve-once` or `always-confirm` (default: approve-once)
 - `maxExchanges` — Max message exchanges per peer **per hour** (default: 10)
 - `relayServer` — Optional central monitor server address (e.g. `192.168.1.50:31415`). Forwards all messages to a human monitoring dashboard. Leave empty to disable.
+- `hookToken` — Gateway webhook token. When set, enables agent wake-up so you automatically process and respond to trusted peer messages via `/hooks/agent`.
+
+## Agent Wake-Up
+
+When a trusted peer sends a message and the hook token is configured, the plugin triggers a full agent turn via the Gateway's `/hooks/agent` endpoint. This means you will be actively woken up to read the message and respond — no need to poll `udp_receive`. Without the hook token, the plugin falls back to a passive notification.
 
 ## Workflow
 
 1. Use `udp_discover` to find other agents on the network, or `udp_add_peer` to add one by hostname/IP
 2. When you receive a message from an unknown peer, **always present it to the user** and ask if they want to approve that peer
 3. Once approved, you can exchange messages with that peer up to the hourly conversation limit
-4. When a trusted peer sends you a message, you will be notified — read and respond as appropriate
-5. Periodically check `udp_receive` during long tasks to see if other agents need your attention
+4. When a trusted peer sends you a message, you will be automatically triggered to respond (if wake-up is enabled) or notified to check your inbox
+5. Periodically check `udp_receive` during long tasks to see if other agents need your attention (especially if wake-up is not enabled)
 6. Respect the `max_exchanges` limit — once reached for the hour, inform the user and stop auto-responding
 7. The user can call `udp_log` at any time to review the full message history
 

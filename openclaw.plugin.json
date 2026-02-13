@@ -23,6 +23,11 @@
         "type": "string",
         "default": "",
         "description": "Optional relay/monitor server address (host:port, e.g. 192.168.1.50:31415). When set, all messages are forwarded to this server for central monitoring. Leave empty to disable."
+      },
+      "hookToken": {
+        "type": "string",
+        "default": "",
+        "description": "Gateway webhook token for agent wake-up. When set, incoming trusted messages trigger a full agent turn via /hooks/agent so the agent actively reads and responds. Without this, the plugin falls back to passive notifications. Can also be set via hooks.token in openclaw.json or OPENCLAW_HOOK_TOKEN env var."
       }
     }
   },
@@ -30,7 +35,8 @@
     "port": { "label": "UDP Port" },
     "trustMode": { "label": "Trust Mode" },
     "maxExchanges": { "label": "Max Exchanges Per Peer/Hour" },
-    "relayServer": { "label": "Relay/Monitor Server" }
+    "relayServer": { "label": "Relay/Monitor Server" },
+    "hookToken": { "label": "Hook Token (Agent Wake-Up)" }
   },
   "skills": ["skills/udp-messenger"]
 }

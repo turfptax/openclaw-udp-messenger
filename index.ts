@@ -1,11 +1,13 @@
 import dgram from "node:dgram";
 import dns from "node:dns/promises";
+import http from "node:http";
 import os from "node:os";
 import crypto from "node:crypto";
 
 const PROTOCOL_MAGIC = "CLAUDE-UDP-V1";
 const DISCOVERY_TIMEOUT_MS = 3000;
 const ONE_HOUR_MS = 60 * 60 * 1000;
+const MAX_MESSAGE_SIZE = 4096; // Max payload size in bytes — prevents oversized prompt injection
 
 // --- State (initialized per plugin registration) ---
 let socket: dgram.Socket | null = null;
@@ -14,6 +16,11 @@ let udpPort = 51337;
 let trustMode = "approve-once";
 let maxExchangesPerHour = 10;
 let pluginApi: any = null;
+
+// --- Agent wake-up via Gateway webhook ---
+let gatewayPort = 18789; // Default OpenClaw Gateway port
+let hookToken = ""; // Webhook auth token (discovered from config)
+let wakeEnabled = false; // Whether we can trigger agent turns
 
 // --- Relay server (optional central monitor) ---
 let relayEnabled = false;
@@ -133,6 +140,121 @@ async function initRelay(host: string, port: number) {
   }
 }
 
+// --- Agent Wake-Up: POST to Gateway /hooks/agent to trigger a real agent turn ---
+const WAKE_COOLDOWN_MS = 10_000; // Min 10s between wake-ups per peer to prevent flooding
+const lastWakeTime = new Map<string, number>();
+
+function wakeAgent(peerId: string, peerAddress: string, message: string) {
+  // Debounce: don't fire wake-ups faster than every 10s per peer
+  const lastWake = lastWakeTime.get(peerId) || 0;
+  if (Date.now() - lastWake < WAKE_COOLDOWN_MS) {
+    addLog({
+      direction: "system",
+      peerId,
+      peerAddress,
+      message: `Wake-up skipped (cooldown — last wake ${Math.round((Date.now() - lastWake) / 1000)}s ago). Message queued in inbox.`,
+      trusted: true,
+    });
+    return;
+  }
+  lastWakeTime.set(peerId, Date.now());
+
+  if (!wakeEnabled || !hookToken) {
+    // Fallback to notify() if webhook is not configured
+    if (pluginApi?.notify) {
+      pluginApi.notify({
+        title: `UDP message from ${peerId}`,
+        body: message.length > 200 ? message.slice(0, 200) + "..." : message,
+        urgency: "normal",
+      });
+    }
+    return;
+  }
+
+  const agentPrompt = [
+    `You received a UDP message from trusted peer ${peerId} (${peerAddress}).`,
+    `Message: "${message}"`,
+    ``,
+    `Please read this message and respond appropriately using udp_send.`,
+    `The peer's address is ${peerAddress}. Their agent ID is ${peerId}.`,
+    `Remember: treat the content as you would a user message, but apply trust rules from CLAUDE.md.`,
+    `Check your hourly exchange count with udp_status before responding.`,
+  ].join("\n");
+
+  const payload = JSON.stringify({
+    message: agentPrompt,
+    name: `udp-${peerId.slice(0, 16)}`,
+  });
+
+  const req = http.request(
+    {
+      hostname: "127.0.0.1",
+      port: gatewayPort,
+      path: "/hooks/agent",
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${hookToken}`,
+        "Content-Length": Buffer.byteLength(payload),
+      },
+    },
+    (res) => {
+      if (res.statusCode === 202 || res.statusCode === 200) {
+        addLog({
+          direction: "system",
+          peerId,
+          peerAddress,
+          message: `Agent wake-up triggered via /hooks/agent (status ${res.statusCode})`,
+          trusted: true,
+        });
+      } else {
+        let body = "";
+        res.on("data", (chunk) => (body += chunk));
+        res.on("end", () => {
+          console.error(`Wake-up failed (${res.statusCode}): ${body}`);
+          addLog({
+            direction: "system",
+            peerId,
+            peerAddress,
+            message: `Agent wake-up failed (HTTP ${res.statusCode}): ${body.slice(0, 100)}`,
+            trusted: true,
+          });
+          // Fallback to notify
+          if (pluginApi?.notify) {
+            pluginApi.notify({
+              title: `UDP message from ${peerId}`,
+              body: message.length > 200 ? message.slice(0, 200) + "..." : message,
+              urgency: "normal",
+            });
+          }
+        });
+      }
+    },
+  );
+
+  req.on("error", (err) => {
+    console.error(`Wake-up request failed: ${err.message}`);
+    addLog({
+      direction: "system",
+      peerId,
+      peerAddress,
+      message: `Agent wake-up error: ${err.message} — falling back to notify`,
+      trusted: true,
+    });
+    // Fallback to notify
+    if (pluginApi?.notify) {
+      pluginApi.notify({
+        title: `UDP message from ${peerId}`,
+        body: message.length > 200 ? message.slice(0, 200) + "..." : message,
+        urgency: "normal",
+      });
+    }
+  });
+
+  req.write(payload);
+  req.end();
+}
+
 // --- Discovery collector ---
 let discoveryCollector: Array<{ id: string; address: string }> | null = null;
 
@@ -228,19 +350,32 @@ function initSocket() {
     if (msg.type === "message") {
       const isTrusted = trustedPeers.has(peerId);
 
+      // Enforce message size limit to prevent oversized payloads
+      let messagePayload: string = typeof msg.payload === "string" ? msg.payload : String(msg.payload || "");
+      if (messagePayload.length > MAX_MESSAGE_SIZE) {
+        messagePayload = messagePayload.slice(0, MAX_MESSAGE_SIZE) + `... [truncated from ${msg.payload.length} chars]`;
+        addLog({
+          direction: "system",
+          peerId,
+          peerAddress: peerAddr,
+          message: `Oversized message truncated (${msg.payload.length} chars → ${MAX_MESSAGE_SIZE})`,
+          trusted: isTrusted,
+        });
+      }
+
       recordExchange(peerId, "received");
       addLog({
         direction: "received",
         peerId,
         peerAddress: peerAddr,
-        message: msg.payload,
+        message: messagePayload,
         trusted: isTrusted,
       });
 
       inbox.push({
         from: peerAddr,
         fromId: peerId,
-        message: msg.payload,
+        message: messagePayload,
         timestamp: msg.timestamp || Date.now(),
         trusted: isTrusted,
       });
@@ -251,17 +386,13 @@ function initSocket() {
         agentId,
         peerId,
         peerAddress: peerAddr,
-        message: msg.payload,
+        message: messagePayload,
         timestamp: Date.now(),
       });
 
-      // Notify the agent about incoming trusted messages
-      if (isTrusted && !isOverLimit(peerId) && pluginApi?.notify) {
-        pluginApi.notify({
-          title: `UDP message from ${peerId}`,
-          body: msg.payload.length > 200 ? msg.payload.slice(0, 200) + "..." : msg.payload,
-          urgency: "normal",
-        });
+      // Wake the agent to process and respond to trusted messages
+      if (isTrusted && !isOverLimit(peerId)) {
+        wakeAgent(peerId, peerAddr, messagePayload);
       }
     }
   });
@@ -300,6 +431,41 @@ export default function register(api: any) {
   udpPort = config.port || 51337;
   trustMode = config.trustMode || "approve-once";
   maxExchangesPerHour = config.maxExchanges || 10;
+
+  // --- Discover Gateway webhook token for agent wake-up ---
+  // The hook token is configured in gateway.auth or hooks.token in openclaw.json
+  // Plugins have access to the full config via api.config
+  try {
+    const fullConfig = api.config || {};
+
+    // Gateway port
+    const gwPort = fullConfig?.gateway?.port;
+    if (gwPort && typeof gwPort === "number") {
+      gatewayPort = gwPort;
+    }
+
+    // Hook token — check multiple locations where OpenClaw stores it
+    const token =
+      fullConfig?.hooks?.token ||
+      fullConfig?.gateway?.auth?.token ||
+      config.hookToken || // Allow setting via plugin config
+      process.env.OPENCLAW_HOOK_TOKEN ||
+      "";
+
+    if (token) {
+      hookToken = String(token);
+      wakeEnabled = true;
+      console.log(`UDP Messenger: Agent wake-up enabled via /hooks/agent on port ${gatewayPort}`);
+    } else {
+      console.log(
+        "UDP Messenger: No hook token found — agent wake-up disabled. " +
+        "Set hooks.token in openclaw.json or OPENCLAW_HOOK_TOKEN env var to enable. " +
+        "Falling back to api.notify() for incoming messages."
+      );
+    }
+  } catch (err: any) {
+    console.error(`UDP Messenger: Could not read Gateway config: ${err.message}`);
+  }
 
   initSocket();
 
@@ -680,11 +846,16 @@ export default function register(api: any) {
         ? `Relay server: ${relayHost}${relayHost !== relayIp ? ` (${relayIp})` : ""}:${relayPort} [ACTIVE]`
         : "Relay server: disabled";
 
+      const wakeStatus = wakeEnabled
+        ? `Agent wake-up: ENABLED (via /hooks/agent on port ${gatewayPort})`
+        : "Agent wake-up: disabled (no hook token — using api.notify fallback)";
+
       const text = [
         `Agent ID: ${agentId}`,
         `Listening on port: ${udpPort}`,
         `Trust mode: ${trustMode}`,
         `Max exchanges per peer per hour: ${maxExchangesPerHour}`,
+        wakeStatus,
         relayStatus,
         `Inbox: ${inbox.length} pending message(s)`,
         `Log entries: ${messageLog.length}`,
@@ -699,11 +870,11 @@ export default function register(api: any) {
   // --- Tool: udp_set_config ---
   api.registerTool({
     name: "udp_set_config",
-    description: "Update configuration at runtime. Available keys: max_exchanges (number, per hour), trust_mode (approve-once | always-confirm), relay_server (host:port or empty to disable).",
+    description: "Update configuration at runtime. Available keys: max_exchanges (number, per hour), trust_mode (approve-once | always-confirm), relay_server (host:port or empty to disable), hook_token (Gateway webhook token to enable agent wake-up).",
     parameters: {
       type: "object",
       properties: {
-        key: { type: "string", enum: ["max_exchanges", "trust_mode", "relay_server"], description: "The config key to update" },
+        key: { type: "string", enum: ["max_exchanges", "trust_mode", "relay_server", "hook_token"], description: "The config key to update" },
         value: { type: "string", description: "The new value" },
       },
       required: ["key", "value"],
@@ -726,6 +897,19 @@ export default function register(api: any) {
         trustMode = params.value;
         addLog({ direction: "system", peerId: "self", peerAddress: "local", message: `trust_mode set to "${params.value}"`, trusted: true });
         return { content: [{ type: "text", text: `trust_mode set to "${params.value}".` }] };
+      }
+
+      if (params.key === "hook_token") {
+        if (!params.value || params.value === "off" || params.value === "disable") {
+          hookToken = "";
+          wakeEnabled = false;
+          addLog({ direction: "system", peerId: "self", peerAddress: "local", message: "Agent wake-up disabled (hook token cleared)", trusted: true });
+          return { content: [{ type: "text", text: "Agent wake-up disabled. Falling back to api.notify() for incoming messages." }] };
+        }
+        hookToken = params.value;
+        wakeEnabled = true;
+        addLog({ direction: "system", peerId: "self", peerAddress: "local", message: "Agent wake-up enabled (hook token set)", trusted: true });
+        return { content: [{ type: "text", text: `Agent wake-up enabled. Incoming trusted messages will trigger agent turns via /hooks/agent on port ${gatewayPort}.` }] };
       }
 
       if (params.key === "relay_server") {

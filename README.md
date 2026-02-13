@@ -10,7 +10,7 @@ An [OpenClaw](https://docs.openclaw.ai) plugin that lets AI agents communicate w
 - **Trust Model** — `approve-once` or `always-confirm` modes, user must approve new peers
 - **Hourly Rate Limits** — configurable max exchanges per peer per hour (default: 10) with rolling window
 - **Message Log** — full history of all sent/received/system messages for human review
-- **Agent Notifications** — agents are notified when trusted peers send messages
+- **Agent Wake-Up** — agents are automatically triggered to respond when trusted peers send messages (via Gateway webhook)
 - **Relay Server** — optionally forward all messages to a central monitoring server for human observation
 - **No Dependencies** — pure Node.js, no external packages required at runtime
 
@@ -59,6 +59,37 @@ Add to your `openclaw.json`:
 | `trustMode` | `approve-once` | `approve-once` or `always-confirm` |
 | `maxExchanges` | `10` | Max message exchanges per peer **per hour** |
 | `relayServer` | `""` (disabled) | Central monitor address (`host:port`, e.g. `192.168.1.50:31415`) |
+| `hookToken` | `""` (disabled) | Gateway webhook token for agent wake-up (see below) |
+
+## Agent Wake-Up
+
+By default, when a trusted peer sends a message, the plugin sends a passive notification via `api.notify()`. The agent may not respond until it next polls `udp_receive`.
+
+To enable **active wake-up**, configure a Gateway webhook token. The plugin will POST to `/hooks/agent` on the local Gateway, triggering a full agent turn where the agent reads the message and responds automatically.
+
+**Setup:**
+
+1. Make sure you have a hook token configured in your `openclaw.json`:
+   ```json
+   {
+     "hooks": {
+       "token": "your-secret-token-here"
+     }
+   }
+   ```
+
+2. The plugin auto-discovers the token from (checked in order):
+   - `hooks.token` in `openclaw.json`
+   - `gateway.auth.token` in `openclaw.json`
+   - `plugins.entries.openclaw-udp-messenger.config.hookToken`
+   - `OPENCLAW_HOOK_TOKEN` environment variable
+
+3. Or set it at runtime:
+   ```
+   udp_set_config key=hook_token value=your-secret-token-here
+   ```
+
+When wake-up is enabled, `udp_status` will show: `Agent wake-up: ENABLED`.
 
 ## Tools
 
@@ -74,7 +105,7 @@ The plugin registers these agent tools:
 | `udp_revoke_peer` | Remove trust from a peer |
 | `udp_log` | View full message history (sent, received, system events) |
 | `udp_status` | View agent ID, port, peers, hourly exchange counts, relay status |
-| `udp_set_config` | Change max_exchanges, trust_mode, or relay_server at runtime |
+| `udp_set_config` | Change max_exchanges, trust_mode, relay_server, or hook_token at runtime |
 
 ## Relay / Monitoring Server
 
@@ -112,8 +143,8 @@ udp_set_config key=relay_server value=off
 2. `udp_discover` broadcasts a `CLAUDE-UDP-V1` ping on the LAN
 3. Other agents respond with their identity
 4. Messages from unknown peers queue up — the agent asks the user to approve
-5. Once trusted, messages flow freely and the agent is **notified in real-time**
-6. The agent responds to trusted peer messages as if a user is talking to it
+5. Once trusted, messages flow freely and the agent is **automatically triggered to respond** (with hook token) or notified (without)
+6. The agent responds to trusted peer messages as if a user is talking to it — wake-up via Gateway webhook ensures active responses
 7. Exchange counts use a **rolling hourly window** — limits reset automatically
 8. All traffic is local UDP — nothing leaves your network
 9. Every message is logged — use `udp_log` to review history
